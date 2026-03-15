@@ -941,9 +941,9 @@ func (s *HttpServer) Listen(port int) error {
 	http.HandleFunc("/reset-droplogs", s.resetDroplogs)
 	http.HandleFunc("/process-list", s.getProcessList)
 	http.HandleFunc("/attach-process", s.attachProcess)
-	http.HandleFunc("/ws", s.wsServer.HandleWebSocket)                         // Web socket
-	http.HandleFunc("/initial-data", s.initialData)                            // Web socket data
-	http.HandleFunc("/api/reload-config", s.reloadConfig)                      // New handler
+	http.HandleFunc("/ws", s.wsServer.HandleWebSocket)    // Web socket
+	http.HandleFunc("/initial-data", s.initialData)       // Web socket data
+	http.HandleFunc("/api/reload-config", s.reloadConfig) // New handler
 	http.HandleFunc("/api/supervisors/reorder", s.reorderSupervisors)
 	http.HandleFunc("/api/supervisors/hide", s.hideSupervisor)
 	http.HandleFunc("/api/supervisors/unhide", s.unhideSupervisor)
@@ -1006,6 +1006,9 @@ func (s *HttpServer) Listen(port int) error {
 	http.HandleFunc("/api/armory", s.armoryAPI)
 	http.HandleFunc("/api/armory/characters", s.armoryCharactersAPI)
 	http.HandleFunc("/api/armory/all", s.armoryAllAPI)
+
+	// Discord version route
+	http.HandleFunc("/api/discord/version", s.discordVersion)
 
 	s.registerDropRoutes()
 
@@ -1197,7 +1200,6 @@ func (s *HttpServer) startSupervisor(w http.ResponseWriter, r *http.Request) {
 
 	s.initialData(w, r)
 }
-
 
 func (s *HttpServer) reorderSupervisors(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -1847,10 +1849,10 @@ func (s *HttpServer) index(w http.ResponseWriter) {
 	}
 
 	s.templates.ExecuteTemplate(w, "index.gohtml", IndexData{
-		Version:   config.Version,
+		Version:     config.Version,
 		Supervisors: supervisors,
-		Status:    status,
-		DropCount: drops,
+		Status:      status,
+		DropCount:   drops,
 	})
 }
 
@@ -4728,4 +4730,19 @@ func (s *HttpServer) generateBattleNetToken(w http.ResponseWriter, r *http.Reque
 		slog.String("username", req.Username))
 
 	sendLine("TOKEN: " + token)
+}
+
+// discordVersion returns the active Discord bot implementation version and
+// whether V2 is enabled in the config. Useful for dashboards and debugging.
+func (s *HttpServer) discordVersion(w http.ResponseWriter, r *http.Request) {
+	version := "v1"
+	if config.Koolo.Discord.UseV2 {
+		version = "v2"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"enabled": config.Koolo.Discord.Enabled,
+		"version": version,
+		"useV2":   config.Koolo.Discord.UseV2,
+	})
 }

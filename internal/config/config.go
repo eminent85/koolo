@@ -59,6 +59,7 @@ type KooloCfg struct {
 	WindowHeight          int    `yaml:"windowHeight"`
 	Discord               struct {
 		Enabled                      bool     `yaml:"enabled"`
+		UseV2                        bool     `yaml:"useV2"`
 		EnableGameCreatedMessages    bool     `yaml:"enableGameCreatedMessages"`
 		EnableNewRunMessages         bool     `yaml:"enableNewRunMessages"`
 		EnableRunFinishMessages      bool     `yaml:"enableRunFinishMessages"`

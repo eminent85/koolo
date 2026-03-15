@@ -19,6 +19,7 @@ import (
 	"github.com/hectorgimenez/koolo/internal/config"
 	"github.com/hectorgimenez/koolo/internal/event"
 	"github.com/hectorgimenez/koolo/internal/remote/discord"
+	"github.com/hectorgimenez/koolo/internal/remote/discordv2"
 	"github.com/hectorgimenez/koolo/internal/remote/droplog"
 	ngrokremote "github.com/hectorgimenez/koolo/internal/remote/ngrok"
 	"github.com/hectorgimenez/koolo/internal/remote/telegram"
@@ -258,25 +259,88 @@ func main() {
 
 	// Discord Bot initialization
 	if config.Koolo.Discord.Enabled {
-		discordBot, err := discord.NewBot(
-			config.Koolo.Discord.Token,
-			config.Koolo.Discord.ChannelID,
-			config.Koolo.Discord.ItemChannelID,
-			manager,
-			config.Koolo.Discord.UseWebhook,
-			config.Koolo.Discord.WebhookURL,
-			config.Koolo.Discord.ItemWebhookURL,
-		)
-		if err != nil {
-			logger.Error("Discord could not been initialized", slog.Any("error", err))
-			return
+		discordVersion := "v1"
+		if config.Koolo.Discord.UseV2 {
+			discordVersion = "v2"
 		}
+		deliveryMode := "bot-api"
+		if config.Koolo.Discord.UseWebhook {
+			deliveryMode = "webhook"
+		}
+		logger.Info("Discord bot enabled",
+			slog.String("version", discordVersion),
+			slog.String("delivery", deliveryMode),
+			slog.String("channelID", config.Koolo.Discord.ChannelID),
+			slog.String("itemChannelID", config.Koolo.Discord.ItemChannelID),
+			slog.Int("adminCount", len(config.Koolo.Discord.BotAdmins)),
+		)
+		logger.Debug("Discord event toggles",
+			slog.Bool("gameCreated", config.Koolo.Discord.EnableGameCreatedMessages),
+			slog.Bool("newRun", config.Koolo.Discord.EnableNewRunMessages),
+			slog.Bool("runFinish", config.Koolo.Discord.EnableRunFinishMessages),
+			slog.Bool("errors", config.Koolo.Discord.EnableDiscordErrorMessages),
+			slog.Bool("chickens", config.Koolo.Discord.EnableDiscordChickenMessages),
+			slog.Bool("itemEmbeds", config.Koolo.Discord.DisableItemStashScreenshots),
+			slog.Bool("pickitInfo", config.Koolo.Discord.IncludePickitInfoInItemText),
+		)
 
-		eventListener.Register(discordBot.Handle)
-		if !config.Koolo.Discord.UseWebhook {
-			g.Go(wrapWithRecover(logger, func() error {
-				return discordBot.Start(ctx)
-			}))
+		if config.Koolo.Discord.UseV2 {
+			opts := discordv2.Options{
+				Token:                        config.Koolo.Discord.Token,
+				ChannelID:                    config.Koolo.Discord.ChannelID,
+				ItemChannelID:                config.Koolo.Discord.ItemChannelID,
+				UseWebhook:                   config.Koolo.Discord.UseWebhook,
+				WebhookURL:                   config.Koolo.Discord.WebhookURL,
+				ItemWebhookURL:               config.Koolo.Discord.ItemWebhookURL,
+				BotAdmins:                    config.Koolo.Discord.BotAdmins,
+				EnableGameCreatedMessages:    config.Koolo.Discord.EnableGameCreatedMessages,
+				EnableNewRunMessages:         config.Koolo.Discord.EnableNewRunMessages,
+				EnableRunFinishMessages:      config.Koolo.Discord.EnableRunFinishMessages,
+				EnableDiscordErrorMessages:   config.Koolo.Discord.EnableDiscordErrorMessages,
+				EnableDiscordChickenMessages: config.Koolo.Discord.EnableDiscordChickenMessages,
+				DisableItemStashScreenshots:  config.Koolo.Discord.DisableItemStashScreenshots,
+				IncludePickitInfoInItemText:  config.Koolo.Discord.IncludePickitInfoInItemText,
+			}
+			adapter := newManagerAdapter(manager)
+			discordBotV2, err := discordv2.New(opts, adapter)
+			if err != nil {
+				logger.Error("Discord v2 could not be initialized", slog.Any("error", err))
+				return
+			}
+			logger.Info("Discord v2 bot created successfully")
+			eventListener.Register(discordBotV2.Handle)
+			if !config.Koolo.Discord.UseWebhook {
+				logger.Debug("Starting Discord v2 gateway connection")
+				g.Go(wrapWithRecover(logger, func() error {
+					return discordBotV2.Start(ctx)
+				}))
+			} else {
+				logger.Debug("Discord v2 running in webhook-only mode, skipping gateway connection")
+			}
+		} else {
+			discordBot, err := discord.NewBot(
+				config.Koolo.Discord.Token,
+				config.Koolo.Discord.ChannelID,
+				config.Koolo.Discord.ItemChannelID,
+				manager,
+				config.Koolo.Discord.UseWebhook,
+				config.Koolo.Discord.WebhookURL,
+				config.Koolo.Discord.ItemWebhookURL,
+			)
+			if err != nil {
+				logger.Error("Discord v1 could not be initialized", slog.Any("error", err))
+				return
+			}
+			logger.Info("Discord v1 bot created successfully")
+			eventListener.Register(discordBot.Handle)
+			if !config.Koolo.Discord.UseWebhook {
+				logger.Debug("Starting Discord v1 gateway connection")
+				g.Go(wrapWithRecover(logger, func() error {
+					return discordBot.Start(ctx)
+				}))
+			} else {
+				logger.Debug("Discord v1 running in webhook-only mode, skipping gateway connection")
+			}
 		}
 	}
 
