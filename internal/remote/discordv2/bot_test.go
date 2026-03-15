@@ -52,6 +52,20 @@ func TestNew_BotTokenMode_OK(t *testing.T) {
 	}
 }
 
+func TestCommandPrefix_Default(t *testing.T) {
+	b := &Bot{opts: Options{}}
+	if got := b.commandPrefix(); got != "!" {
+		t.Errorf("commandPrefix() = %q, want %q", got, "!")
+	}
+}
+
+func TestCommandPrefix_Custom(t *testing.T) {
+	b := &Bot{opts: Options{CommandPrefix: "$"}}
+	if got := b.commandPrefix(); got != "$" {
+		t.Errorf("commandPrefix() = %q, want %q", got, "$")
+	}
+}
+
 func TestGetItemSender_FallsBackToSender(t *testing.T) {
 	main := &spySender{}
 	b := &Bot{sender: main}
