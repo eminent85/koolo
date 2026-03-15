@@ -2,10 +2,14 @@ package discordv2
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"sync"
 
 	"github.com/bwmarrin/discordgo"
 )
+
+var discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 // spySender is a test double for MessageSender that records calls.
 type spySender struct {
@@ -67,6 +71,7 @@ func newTestBot(opts Options) (*Bot, *spySender, *spySender) {
 		opts:       opts,
 		sender:     main,
 		itemSender: item,
+		logger:     discardLogger,
 	}, main, item
 }
 
@@ -77,5 +82,6 @@ func newTestBotNoItemSender(opts Options) (*Bot, *spySender) {
 	return &Bot{
 		opts:   opts,
 		sender: main,
+		logger: discardLogger,
 	}, main
 }

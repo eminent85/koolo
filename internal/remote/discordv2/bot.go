@@ -3,6 +3,7 @@ package discordv2
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -84,6 +85,7 @@ type Bot struct {
 	session *discordgo.Session
 	manager SupervisorControl
 	opts    Options
+	logger  *slog.Logger
 
 	// sender is the default message sender (main channel / webhook).
 	sender MessageSender
@@ -92,11 +94,12 @@ type Bot struct {
 	itemSender MessageSender
 }
 
-// New creates a Bot from the given options and supervisor manager.
-func New(opts Options, manager SupervisorControl) (*Bot, error) {
+// New creates a Bot from the given options, supervisor manager, and logger.
+func New(opts Options, manager SupervisorControl, logger *slog.Logger) (*Bot, error) {
 	b := &Bot{
 		manager: manager,
 		opts:    opts,
+		logger:  logger,
 	}
 
 	if opts.UseWebhook {
@@ -129,19 +132,33 @@ func New(opts Options, manager SupervisorControl) (*Bot, error) {
 // ctx is cancelled. In webhook mode it simply blocks on context cancellation.
 func (b *Bot) Start(ctx context.Context) error {
 	if b.opts.UseWebhook {
+		b.logger.Debug("discordv2: webhook mode, waiting for context cancellation")
 		<-ctx.Done()
+		b.logger.Info("discordv2: webhook mode context cancelled, shutting down")
 		return nil
 	}
 
+	b.logger.Debug("discordv2: registering message handler")
 	b.session.AddHandler(b.onMessageCreated)
 	b.session.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentMessageContent
 
+	b.logger.Debug("discordv2: opening gateway connection")
 	if err := b.session.Open(); err != nil {
+		b.logger.Error("discordv2: gateway connection failed", slog.Any("error", err))
 		return fmt.Errorf("discordv2: open connection: %w", err)
 	}
+	b.logger.Info("discordv2: gateway connection established")
 
+	b.logger.Debug("discordv2: waiting for context cancellation")
 	<-ctx.Done()
-	return b.session.Close()
+	b.logger.Info("discordv2: context cancelled, closing gateway connection")
+	err := b.session.Close()
+	if err != nil {
+		b.logger.Error("discordv2: error closing gateway connection", slog.Any("error", err))
+	} else {
+		b.logger.Debug("discordv2: gateway connection closed cleanly")
+	}
+	return err
 }
 
 // getItemSender returns the item-specific sender, falling back to the default.

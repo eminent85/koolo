@@ -5,14 +5,14 @@ import (
 )
 
 func TestNew_WebhookMode_RequiresURL(t *testing.T) {
-	_, err := New(Options{UseWebhook: true, WebhookURL: ""}, nil)
+	_, err := New(Options{UseWebhook: true, WebhookURL: ""}, nil, discardLogger)
 	if err == nil {
 		t.Fatal("expected error when webhook URL is empty")
 	}
 }
 
 func TestNew_WebhookMode_OK(t *testing.T) {
-	b, err := New(Options{UseWebhook: true, WebhookURL: "https://example.com/webhook"}, nil)
+	b, err := New(Options{UseWebhook: true, WebhookURL: "https://example.com/webhook"}, nil, discardLogger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -29,7 +29,7 @@ func TestNew_WebhookMode_WithItemWebhook(t *testing.T) {
 		UseWebhook:     true,
 		WebhookURL:     "https://example.com/webhook",
 		ItemWebhookURL: "https://example.com/items",
-	}, nil)
+	}, nil, discardLogger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestNew_WebhookMode_WithItemWebhook(t *testing.T) {
 
 func TestNew_BotTokenMode_OK(t *testing.T) {
 	// discordgo.New succeeds with any non-empty token string
-	b, err := New(Options{Token: "test-token"}, nil)
+	b, err := New(Options{Token: "test-token"}, nil, discardLogger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

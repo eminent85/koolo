@@ -159,7 +159,10 @@ func main() {
 	}
 
 	g.Go(wrapWithRecover(logger, func() error {
-		defer cancel()
+		defer func() {
+			logger.Info("Webview goroutine exiting, cancelling context")
+			cancel()
+		}()
 		displayScale := config.GetCurrentDisplayScale()
 
 		// 1. Load dimensions from config, or use defaults
@@ -172,6 +175,7 @@ func main() {
 			height = 720
 		}
 
+		logger.Debug("Creating webview", slog.Int("width", width), slog.Int("height", height))
 		w, err := gowebview.New(&gowebview.Config{URL: "http://localhost:8087", WindowConfig: &gowebview.WindowConfig{
 			Title: "Koolo Resurrected",
 			Size: &gowebview.Point{
@@ -180,11 +184,13 @@ func main() {
 			},
 		}})
 		if err != nil {
+			logger.Error("Failed to create webview", slog.Any("error", err))
 			if w != nil {
 				w.Destroy()
 			}
 			return fmt.Errorf("error creating webview: %w", err)
 		}
+		logger.Debug("Webview created successfully")
 
 		// 2. Set HintNone to allow mouse resizing
 		w.SetSize(&gowebview.Point{
@@ -252,7 +258,9 @@ func main() {
 		}()
 
 		defer w.Destroy()
+		logger.Debug("Webview entering Run loop")
 		w.Run()
+		logger.Info("Webview Run loop exited")
 
 		return nil
 	}))
@@ -302,7 +310,7 @@ func main() {
 				IncludePickitInfoInItemText:  config.Koolo.Discord.IncludePickitInfoInItemText,
 			}
 			adapter := newManagerAdapter(manager)
-			discordBotV2, err := discordv2.New(opts, adapter)
+			discordBotV2, err := discordv2.New(opts, adapter, logger)
 			if err != nil {
 				logger.Error("Discord v2 could not be initialized", slog.Any("error", err))
 				return
@@ -359,13 +367,33 @@ func main() {
 	}
 
 	g.Go(wrapWithRecover(logger, func() error {
-		defer cancel()
-		return srv.Listen(8087)
+		defer func() {
+			logger.Info("HTTP server goroutine exiting, cancelling context")
+			cancel()
+		}()
+		logger.Debug("Starting HTTP server on port 8087")
+		err := srv.Listen(8087)
+		if err != nil {
+			logger.Error("HTTP server exited with error", slog.Any("error", err))
+		} else {
+			logger.Info("HTTP server exited cleanly")
+		}
+		return err
 	}))
 
 	g.Go(wrapWithRecover(logger, func() error {
-		defer cancel()
-		return eventListener.Listen(ctx)
+		defer func() {
+			logger.Info("Event listener goroutine exiting, cancelling context")
+			cancel()
+		}()
+		logger.Debug("Starting event listener")
+		err := eventListener.Listen(ctx)
+		if err != nil {
+			logger.Error("Event listener exited with error", slog.Any("error", err))
+		} else {
+			logger.Info("Event listener exited cleanly")
+		}
+		return err
 	}))
 
 	g.Go(wrapWithRecover(logger, func() error {
