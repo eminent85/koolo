@@ -301,6 +301,7 @@ func main() {
 				WebhookURL:                   config.Koolo.Discord.WebhookURL,
 				ItemWebhookURL:               config.Koolo.Discord.ItemWebhookURL,
 				BotAdmins:                    config.Koolo.Discord.BotAdmins,
+				CommandPrefix:                config.Koolo.Discord.CommandPrefix,
 				EnableGameCreatedMessages:    config.Koolo.Discord.EnableGameCreatedMessages,
 				EnableNewRunMessages:         config.Koolo.Discord.EnableNewRunMessages,
 				EnableRunFinishMessages:      config.Koolo.Discord.EnableRunFinishMessages,

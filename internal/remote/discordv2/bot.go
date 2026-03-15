@@ -34,6 +34,26 @@ type SupervisorStats struct {
 	TotalDeaths      int
 	TotalChickens    int
 	TotalErrors      int
+	Character        CharacterInfo
+}
+
+// CharacterInfo holds live in-game character data shown in verbose stats output.
+type CharacterInfo struct {
+	Class           string
+	Level           int
+	Area            string
+	Difficulty      string
+	Life            int
+	MaxLife         int
+	Mana            int
+	MaxMana         int
+	MagicFind       int
+	GoldFind        int
+	FireResist      int
+	ColdResist      int
+	LightningResist int
+	PoisonResist    int
+	Ping            int
 }
 
 // SupervisorControl is the subset of bot.SupervisorManager that the discord
@@ -68,6 +88,8 @@ type Options struct {
 
 	// BotAdmins is the list of Discord user IDs allowed to run commands.
 	BotAdmins []string
+	// CommandPrefix is the prefix character(s) for bot commands. Defaults to "!" when empty.
+	CommandPrefix string
 
 	// Event publishing toggles — mirror the v1 config surface.
 	EnableGameCreatedMessages    bool
@@ -169,6 +191,14 @@ func (b *Bot) getItemSender() MessageSender {
 	return b.sender
 }
 
+// commandPrefix returns the configured prefix, falling back to "!" when empty.
+func (b *Bot) commandPrefix() string {
+	if b.opts.CommandPrefix == "" {
+		return "!"
+	}
+	return b.opts.CommandPrefix
+}
+
 // onMessageCreated routes incoming Discord messages to command handlers.
 func (b *Bot) onMessageCreated(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author.ID == s.State.User.ID {
@@ -177,28 +207,30 @@ func (b *Bot) onMessageCreated(s *discordgo.Session, m *discordgo.MessageCreate)
 	if !slices.Contains(b.opts.BotAdmins, m.Author.ID) {
 		return
 	}
-	if !strings.HasPrefix(m.Content, "!") {
+
+	p := b.commandPrefix()
+	if !strings.HasPrefix(m.Content, p) {
 		return
 	}
 
-	prefix := strings.Split(m.Content, " ")[0]
-	switch prefix {
-	case "!start":
+	cmd := strings.Split(m.Content, " ")[0]
+	switch cmd {
+	case p + "start":
 		b.handleStart(s, m)
-	case "!stop":
+	case p + "stop":
 		b.handleStop(s, m)
-	case "!status":
-		b.handleStatus(s, m)
-	case "!stats":
+	case p + "status":
 		b.handleStats(s, m)
-	case "!list":
+	case p + "stats":
+		b.handleStats(s, m)
+	case p + "list":
 		b.handleList(s, m)
-	case "!help":
+	case p + "help":
 		b.handleHelp(s, m)
-	case "!drops":
+	case p + "drops":
 		b.handleDrops(s, m)
 	default:
-		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Unknown command: `%s`. Type `!help` for available commands.", prefix))
+		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Unknown command: `%s`. Type `%shelp` for available commands.", cmd, p))
 	}
 }
 

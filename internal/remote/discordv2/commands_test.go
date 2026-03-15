@@ -14,7 +14,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestBuildHelpEmbed(t *testing.T) {
-	embed := buildHelpEmbed()
+	embed := buildHelpEmbed("!")
 
 	if embed.Title == "" {
 		t.Error("help embed should have a title")
@@ -22,15 +22,15 @@ func TestBuildHelpEmbed(t *testing.T) {
 	if embed.Color != 0x5865F2 {
 		t.Errorf("help embed color = 0x%06x, want 0x5865F2", embed.Color)
 	}
-	if len(embed.Fields) != 7 {
-		t.Errorf("help embed should have 7 fields, got %d", len(embed.Fields))
+	if len(embed.Fields) != 6 {
+		t.Errorf("help embed should have 6 fields, got %d", len(embed.Fields))
 	}
 	if embed.Footer == nil {
 		t.Error("help embed should have a footer")
 	}
 
 	// Verify all commands are listed
-	commands := []string{"!list", "!start", "!stop", "!status", "!stats", "!drops", "!help"}
+	commands := []string{"!list", "!start", "!stop", "!stats", "!drops", "!help"}
 	for _, cmd := range commands {
 		found := false
 		for _, f := range embed.Fields {
@@ -45,24 +45,36 @@ func TestBuildHelpEmbed(t *testing.T) {
 	}
 }
 
+func TestBuildHelpEmbed_CustomPrefix(t *testing.T) {
+	embed := buildHelpEmbed("$")
+
+	for _, f := range embed.Fields {
+		if !strings.HasPrefix(f.Name, "$") {
+			t.Errorf("field name %q should start with custom prefix '$'", f.Name)
+		}
+		// Examples in field values should also use the custom prefix, not "!"
+		if strings.Contains(f.Value, "`!") {
+			t.Errorf("field %q value contains stale '!' prefix in examples: %s", f.Name, f.Value)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // buildStatsEmbed
 // ---------------------------------------------------------------------------
 
 func TestBuildStatsEmbed_Online(t *testing.T) {
-	status := SupervisorStats{
+	stats := SupervisorStats{
 		SupervisorStatus: StatusInGame,
 		StartedAt:        time.Now().Add(-1 * time.Hour),
-	}
-	stats := SupervisorStats{
-		TotalGames:    50,
-		TotalDeaths:   2,
-		TotalChickens: 3,
-		TotalErrors:   1,
-		Drops:         make([]data.Drop, 10),
+		TotalGames:       50,
+		TotalDeaths:      2,
+		TotalChickens:    3,
+		TotalErrors:      1,
+		Drops:            make([]data.Drop, 10),
 	}
 
-	embed := buildStatsEmbed("Koza", status, stats)
+	embed := buildStatsEmbed("Koza", stats, false)
 
 	if embed.Title != "Stats for Koza" {
 		t.Errorf("title = %q, want %q", embed.Title, "Stats for Koza")
@@ -97,12 +109,11 @@ func TestBuildStatsEmbed_Online(t *testing.T) {
 }
 
 func TestBuildStatsEmbed_Offline(t *testing.T) {
-	status := SupervisorStats{
+	stats := SupervisorStats{
 		SupervisorStatus: StatusNotStarted,
 	}
-	stats := SupervisorStats{}
 
-	embed := buildStatsEmbed("Koza", status, stats)
+	embed := buildStatsEmbed("Koza", stats, false)
 
 	for _, f := range embed.Fields {
 		if f.Name == "Status" && f.Value != "Offline" {
@@ -112,12 +123,11 @@ func TestBuildStatsEmbed_Offline(t *testing.T) {
 }
 
 func TestBuildStatsEmbed_EmptyStatus(t *testing.T) {
-	status := SupervisorStats{
+	stats := SupervisorStats{
 		SupervisorStatus: "",
 	}
-	stats := SupervisorStats{}
 
-	embed := buildStatsEmbed("Koza", status, stats)
+	embed := buildStatsEmbed("Koza", stats, false)
 
 	for _, f := range embed.Fields {
 		if f.Name == "Status" && f.Value != "Offline" {
@@ -127,11 +137,89 @@ func TestBuildStatsEmbed_EmptyStatus(t *testing.T) {
 }
 
 func TestBuildStatsEmbed_AllFieldsInline(t *testing.T) {
-	embed := buildStatsEmbed("Koza", SupervisorStats{SupervisorStatus: StatusInGame}, SupervisorStats{})
+	embed := buildStatsEmbed("Koza", SupervisorStats{SupervisorStatus: StatusInGame}, false)
 	for _, f := range embed.Fields {
 		if !f.Inline {
 			t.Errorf("field %q should be inline", f.Name)
 		}
+	}
+}
+
+func TestBuildStatsEmbed_Verbose_WithCharacterData(t *testing.T) {
+	stats := SupervisorStats{
+		SupervisorStatus: StatusInGame,
+		StartedAt:        time.Now().Add(-30 * time.Minute),
+		TotalGames:       10,
+		Character: CharacterInfo{
+			Class:           "Sorceress",
+			Level:           85,
+			Area:            "Throne of Destruction",
+			Difficulty:      "Hell",
+			Life:            1200,
+			MaxLife:         1500,
+			Mana:            400,
+			MaxMana:         600,
+			MagicFind:       250,
+			GoldFind:        120,
+			FireResist:      75,
+			ColdResist:      60,
+			LightningResist: 75,
+			PoisonResist:    55,
+			Ping:            42,
+		},
+	}
+
+	embed := buildStatsEmbed("Koza", stats, true)
+
+	// 7 base fields + 7 verbose fields
+	if len(embed.Fields) != 14 {
+		t.Fatalf("verbose embed with character data should have 14 fields, got %d", len(embed.Fields))
+	}
+
+	fieldValues := map[string]string{}
+	for _, f := range embed.Fields {
+		fieldValues[f.Name] = f.Value
+	}
+
+	if !strings.Contains(fieldValues["Character"], "Sorceress") {
+		t.Errorf("Character field should contain class, got: %s", fieldValues["Character"])
+	}
+	if !strings.Contains(fieldValues["Character"], "85") {
+		t.Errorf("Character field should contain level, got: %s", fieldValues["Character"])
+	}
+	if !strings.Contains(fieldValues["Location"], "Throne of Destruction") {
+		t.Errorf("Location field should contain area, got: %s", fieldValues["Location"])
+	}
+	if !strings.Contains(fieldValues["Location"], "Hell") {
+		t.Errorf("Location field should contain difficulty, got: %s", fieldValues["Location"])
+	}
+	if !strings.Contains(fieldValues["Life"], "1200") || !strings.Contains(fieldValues["Life"], "1500") {
+		t.Errorf("Life field should contain current/max life, got: %s", fieldValues["Life"])
+	}
+	if !strings.Contains(fieldValues["Mana"], "400") || !strings.Contains(fieldValues["Mana"], "600") {
+		t.Errorf("Mana field should contain current/max mana, got: %s", fieldValues["Mana"])
+	}
+	if !strings.Contains(fieldValues["MF / GF"], "250") || !strings.Contains(fieldValues["MF / GF"], "120") {
+		t.Errorf("MF / GF field should contain MF and GF values, got: %s", fieldValues["MF / GF"])
+	}
+	if !strings.Contains(fieldValues["Ping"], "42") {
+		t.Errorf("Ping field should contain value, got: %s", fieldValues["Ping"])
+	}
+	if !strings.Contains(fieldValues["Resistances"], "FR: 75") || !strings.Contains(fieldValues["Resistances"], "CR: 60") {
+		t.Errorf("Resistances field should contain all resist values, got: %s", fieldValues["Resistances"])
+	}
+}
+
+func TestBuildStatsEmbed_Verbose_WithoutCharacterData(t *testing.T) {
+	// verbose=true but Class is empty (supervisor offline / no game data yet)
+	stats := SupervisorStats{
+		SupervisorStatus: StatusNotStarted,
+	}
+
+	embed := buildStatsEmbed("Koza", stats, true)
+
+	if len(embed.Fields) != 7 {
+		t.Fatalf("verbose embed without character data should have 7 fields, got %d", len(embed.Fields))
 	}
 }
 

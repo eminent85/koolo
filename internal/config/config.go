@@ -68,6 +68,7 @@ type KooloCfg struct {
 		DisableItemStashScreenshots  bool     `yaml:"disableItemStashScreenshots"`
 		IncludePickitInfoInItemText  bool     `yaml:"includePickitInfoInItemText"`
 		BotAdmins                    []string `yaml:"botAdmins"`
+		CommandPrefix                string   `yaml:"commandPrefix"`
 		ChannelID                    string   `yaml:"channelId"`
 		ItemChannelID                string   `yaml:"itemChannelId"`
 		Token                        string   `yaml:"token"`

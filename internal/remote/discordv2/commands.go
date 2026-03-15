@@ -23,9 +23,12 @@ func (b *Bot) handleStart(s *discordgo.Session, m *discordgo.MessageCreate) {
 			continue
 		}
 
-		b.manager.Start(supervisor, false, false)
+		if err := b.manager.Start(supervisor, false, false); err != nil {
+			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Failed to start supervisor '%s': %s", supervisor, err))
+			continue
+		}
 		time.Sleep(1 * time.Second)
-		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Supervisor '%s' has been started.", supervisor))
+		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Supervisor '%s' started successfully.", supervisor))
 	}
 }
 
@@ -55,45 +58,31 @@ func (b *Bot) handleStop(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 }
 
-func (b *Bot) handleStatus(s *discordgo.Session, m *discordgo.MessageCreate) {
-	words := strings.Fields(m.Content)
-
-	if len(words) < 2 {
-		s.ChannelMessageSend(m.ChannelID, "Usage: !status <supervisor1> [supervisor2] ...")
-		return
-	}
-
-	for _, supervisor := range words[1:] {
-		if !b.supervisorExists(supervisor) {
-			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Supervisor '%s' not found.", supervisor))
-			continue
-		}
-
-		status := b.manager.Status(supervisor)
-		if status.SupervisorStatus == StatusNotStarted || status.SupervisorStatus == "" {
-			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Supervisor '%s' is offline.", supervisor))
-			continue
-		}
-
-		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Supervisor '%s' is %s", supervisor, status.SupervisorStatus))
-	}
-}
-
 func (b *Bot) handleStats(s *discordgo.Session, m *discordgo.MessageCreate) {
 	words := strings.Fields(m.Content)
 
-	if len(words) < 2 {
-		s.ChannelMessageSend(m.ChannelID, "Usage: !stats <supervisor1> [supervisor2] ...")
+	verbose := false
+	var supervisors []string
+	for _, w := range words[1:] {
+		if w == "-v" || w == "--verbose" {
+			verbose = true
+		} else {
+			supervisors = append(supervisors, w)
+		}
+	}
+
+	if len(supervisors) == 0 {
+		s.ChannelMessageSend(m.ChannelID, "Usage: !stats [-v] <supervisor1> [supervisor2] ...")
 		return
 	}
 
-	for _, supervisor := range words[1:] {
+	for _, supervisor := range supervisors {
 		if !b.supervisorExists(supervisor) {
 			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Supervisor '%s' not found.", supervisor))
 			continue
 		}
 
-		embed := buildStatsEmbed(supervisor, b.manager.Status(supervisor), b.manager.GetSupervisorStats(supervisor))
+		embed := buildStatsEmbed(supervisor, b.manager.Status(supervisor), verbose)
 		s.ChannelMessageSendEmbed(m.ChannelID, embed)
 	}
 }
@@ -111,7 +100,7 @@ func (b *Bot) handleList(s *discordgo.Session, m *discordgo.MessageCreate) {
 }
 
 func (b *Bot) handleHelp(s *discordgo.Session, m *discordgo.MessageCreate) {
-	s.ChannelMessageSendEmbed(m.ChannelID, buildHelpEmbed())
+	s.ChannelMessageSendEmbed(m.ChannelID, buildHelpEmbed(b.commandPrefix()))
 }
 
 func (b *Bot) handleDrops(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -155,24 +144,41 @@ func (b *Bot) handleDrops(s *discordgo.Session, m *discordgo.MessageCreate) {
 // Embed builders — extracted for testability
 // ---------------------------------------------------------------------------
 
-// buildStatsEmbed creates the embed for the !stats command.
-func buildStatsEmbed(supervisor string, status, stats SupervisorStats) *discordgo.MessageEmbed {
-	supStatus := string(status.SupervisorStatus)
+// buildStatsEmbed creates the embed for the !stats / !status command.
+// When verbose is true and live character data is available, additional
+// in-game fields (character, location, vitals, resists, MF/GF, ping) are appended.
+func buildStatsEmbed(supervisor string, stats SupervisorStats, verbose bool) *discordgo.MessageEmbed {
+	supStatus := string(stats.SupervisorStatus)
 	if supStatus == string(StatusNotStarted) || supStatus == "" {
 		supStatus = "Offline"
 	}
 
+	fields := []*discordgo.MessageEmbedField{
+		{Name: "Status", Value: supStatus, Inline: true},
+		{Name: "Uptime", Value: time.Since(stats.StartedAt).String(), Inline: true},
+		{Name: "Games", Value: fmt.Sprintf("%d", stats.TotalGames), Inline: true},
+		{Name: "Drops", Value: fmt.Sprintf("%d", len(stats.Drops)), Inline: true},
+		{Name: "Deaths", Value: fmt.Sprintf("%d", stats.TotalDeaths), Inline: true},
+		{Name: "Chickens", Value: fmt.Sprintf("%d", stats.TotalChickens), Inline: true},
+		{Name: "Errors", Value: fmt.Sprintf("%d", stats.TotalErrors), Inline: true},
+	}
+
+	if verbose && stats.Character.Class != "" {
+		ch := stats.Character
+		fields = append(fields,
+			&discordgo.MessageEmbedField{Name: "Character", Value: fmt.Sprintf("%s (Level %d)", ch.Class, ch.Level), Inline: true},
+			&discordgo.MessageEmbedField{Name: "Location", Value: fmt.Sprintf("%s, %s", ch.Area, ch.Difficulty), Inline: true},
+			&discordgo.MessageEmbedField{Name: "Life", Value: fmt.Sprintf("%d / %d", ch.Life, ch.MaxLife), Inline: true},
+			&discordgo.MessageEmbedField{Name: "Mana", Value: fmt.Sprintf("%d / %d", ch.Mana, ch.MaxMana), Inline: true},
+			&discordgo.MessageEmbedField{Name: "MF / GF", Value: fmt.Sprintf("%d%% / %d%%", ch.MagicFind, ch.GoldFind), Inline: true},
+			&discordgo.MessageEmbedField{Name: "Ping", Value: fmt.Sprintf("%dms", ch.Ping), Inline: true},
+			&discordgo.MessageEmbedField{Name: "Resistances", Value: fmt.Sprintf("FR: %d | CR: %d | LR: %d | PR: %d", ch.FireResist, ch.ColdResist, ch.LightningResist, ch.PoisonResist), Inline: false},
+		)
+	}
+
 	return &discordgo.MessageEmbed{
-		Title: fmt.Sprintf("Stats for %s", supervisor),
-		Fields: []*discordgo.MessageEmbedField{
-			{Name: "Status", Value: supStatus, Inline: true},
-			{Name: "Uptime", Value: time.Since(status.StartedAt).String(), Inline: true},
-			{Name: "Games", Value: fmt.Sprintf("%d", stats.TotalGames), Inline: true},
-			{Name: "Drops", Value: fmt.Sprintf("%d", len(stats.Drops)), Inline: true},
-			{Name: "Deaths", Value: fmt.Sprintf("%d", stats.TotalDeaths), Inline: true},
-			{Name: "Chickens", Value: fmt.Sprintf("%d", stats.TotalChickens), Inline: true},
-			{Name: "Errors", Value: fmt.Sprintf("%d", stats.TotalErrors), Inline: true},
-		},
+		Title:  fmt.Sprintf("Stats for %s", supervisor),
+		Fields: fields,
 	}
 }
 
@@ -213,20 +219,20 @@ func buildListEmbed(supervisors []string, manager SupervisorControl) *discordgo.
 	}
 }
 
-// buildHelpEmbed creates the embed for the !help command.
-func buildHelpEmbed() *discordgo.MessageEmbed {
+// buildHelpEmbed creates the embed for the help command.
+func buildHelpEmbed(prefix string) *discordgo.MessageEmbed {
+	p := prefix
 	return &discordgo.MessageEmbed{
 		Title:       "🤖 Koolo Discord Bot Commands",
 		Description: "Control and monitor your Diablo II bot supervisors",
 		Color:       0x5865F2,
 		Fields: []*discordgo.MessageEmbedField{
-			{Name: "!list", Value: "Show all available supervisors with their status and uptime", Inline: false},
-			{Name: "!start <supervisor1> [supervisor2] ...", Value: "Start one or more supervisors\nExample: `!start Koza Ovca`", Inline: false},
-			{Name: "!stop <supervisor1> [supervisor2] ...", Value: "Stop one or more supervisors\nExample: `!stop Koza`", Inline: false},
-			{Name: "!status <supervisor1> [supervisor2] ...", Value: "Check the current status of supervisors\nExample: `!status Koza Ovca`", Inline: false},
-			{Name: "!stats <supervisor1> [supervisor2] ...", Value: "Get detailed statistics for supervisors\nExample: `!stats Koza`", Inline: false},
-			{Name: "!drops <supervisor> [count]", Value: "Show recent drops for a supervisor\nExample: `!drops Koza 10`\nDefault count: 5", Inline: false},
-			{Name: "!help", Value: "Show this help message", Inline: false},
+			{Name: p + "list", Value: "Show all available supervisors with their status and uptime", Inline: false},
+			{Name: p + "start <supervisor1> [supervisor2] ...", Value: fmt.Sprintf("Start one or more supervisors\nExample: `%sstart Koza Ovca`", p), Inline: false},
+			{Name: p + "stop <supervisor1> [supervisor2] ...", Value: fmt.Sprintf("Stop one or more supervisors\nExample: `%sstop Koza`", p), Inline: false},
+			{Name: p + "stats [-v] <supervisor1> [supervisor2] ...", Value: fmt.Sprintf("Show supervisor stats. Add `-v` for verbose output including live character info\nExamples: `%sstats Koza` · `%sstats -v Koza` · `%sstatus Koza`", p, p, p), Inline: false},
+			{Name: p + "drops <supervisor> [count]", Value: fmt.Sprintf("Show recent drops for a supervisor\nExample: `%sdrops Koza 10`\nDefault count: 5", p), Inline: false},
+			{Name: p + "help", Value: "Show this help message", Inline: false},
 		},
 		Footer: &discordgo.MessageEmbedFooter{
 			Text: "💡 Tip: You can control multiple supervisors at once with most commands",

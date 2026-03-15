@@ -47,5 +47,22 @@ func convertStats(s bot.Stats) discordv2.SupervisorStats {
 		TotalDeaths:      s.TotalDeaths(),
 		TotalChickens:    s.TotalChickens(),
 		TotalErrors:      s.TotalErrors(),
+		Character: discordv2.CharacterInfo{
+			Class:           s.UI.Class,
+			Level:           s.UI.Level,
+			Area:            s.UI.Area,
+			Difficulty:      s.UI.Difficulty,
+			Life:            s.UI.Life,
+			MaxLife:         s.UI.MaxLife,
+			Mana:            s.UI.Mana,
+			MaxMana:         s.UI.MaxMana,
+			MagicFind:       s.UI.MagicFind,
+			GoldFind:        s.UI.GoldFind,
+			FireResist:      s.UI.FireResist,
+			ColdResist:      s.UI.ColdResist,
+			LightningResist: s.UI.LightningResist,
+			PoisonResist:    s.UI.PoisonResist,
+			Ping:            s.UI.Ping,
+		},
 	}
 }
